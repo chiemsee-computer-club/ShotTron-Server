@@ -1,5 +1,11 @@
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using ShotTron.Server.Hubs;
 using ShotTron.Server.Models;
+using ShotTron.Server.Services;
 
 namespace ShotTron.Server;
 
@@ -21,9 +27,56 @@ public class Startup
     public void ConfigureServices(IServiceCollection services)
     {
         services.AddSingleton(_appConfig);
+        
+        // services.AddDbContext<ShotTronDbContext>(
+        //     options => options.UseNpgsql(_configuration.GetConnectionString("DefaultConnection")));
 
+        services.AddMemoryCache();
+        
         services.AddControllers();
         services.AddEndpointsApiExplorer();
+
+        services.AddAuthentication(options => {
+            options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+            options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+            options.DefaultScheme = JwtBearerDefaults.AuthenticationScheme;
+        }).AddJwtBearer(o =>
+        {
+            o.TokenValidationParameters = new TokenValidationParameters
+            {
+                ValidIssuer = _appConfig.JwtIssuer,
+                ValidAudience = _appConfig.JwtAudience,
+                IssuerSigningKey = new SymmetricSecurityKey
+                    (Encoding.UTF8.GetBytes(_appConfig.JwtSecret)),
+                ValidateIssuer = true,
+                ValidateAudience = true,
+                ValidateLifetime = false,
+                ValidateIssuerSigningKey = true
+            };
+            
+            o.Events = new JwtBearerEvents
+            {
+                OnMessageReceived = context =>
+                {
+                    var accessToken = context.Request.Query["access_token"];
+
+                    // If the request is for our hub...
+                    var path = context.HttpContext.Request.Path;
+                    if (!string.IsNullOrEmpty(accessToken) &&
+                        path.StartsWithSegments(SessionHub.Endpoint))
+                    {
+                        // Read the token out of the query string
+                        context.Token = accessToken;
+                    }
+                    return Task.CompletedTask;
+                }
+            };
+        });
+        
+        services.AddAuthorization();
+
+        services.AddSingleton<ICacheRepository, CacheRepository>();
+        services.AddSingleton<ITokenService, TokenService>();
         
         services.AddSwaggerGen(options =>
         {
@@ -41,6 +94,8 @@ public class Startup
                     }
                 });
         });
+
+        services.AddSignalR();
     }
     
     // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
@@ -70,5 +125,11 @@ public class Startup
         {
             options.SwaggerEndpoint("/swagger/v1/swagger.json", "ShotTron API");
         });
+
+        app.UseEndpoints(e =>
+            {
+                e.MapHub<SessionHub>(SessionHub.Endpoint);
+            }
+        );
     }
 }

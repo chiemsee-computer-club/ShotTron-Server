@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+
 namespace ShotTron.Server;
 
 public static class Program

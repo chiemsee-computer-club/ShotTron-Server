@@ -40,9 +40,8 @@ public abstract class IntervalHostedService : IHostedService
                 return;
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            // todo
         }
         
         sw.Stop();
